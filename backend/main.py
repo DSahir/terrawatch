@@ -8,14 +8,14 @@ from typing import List, Optional
 import asyncio
 
 # Import local modules
-from backend.models import (
+from models import (
     RiskResponse, NarrateResponse, InsuranceResponse, 
     CitySearchResponse, VisionAnalysisResponse
 )
-from backend.risk_engine import get_risk_data, risk_label
-from backend.insurance_engine import InsuranceEngine
-from backend.ai_client import FeatherlessAIClient
-from backend.config import FEATHERLESS_API_KEY
+from risk_engine import get_risk_data, risk_label
+from insurance_engine import InsuranceEngine
+from ai_client import FeatherlessAIClient
+from config import FEATHERLESS_API_KEY
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
