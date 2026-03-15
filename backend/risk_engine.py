@@ -9,8 +9,21 @@ logger = logging.getLogger(__name__)
 try:
     data = pd.read_csv("data/mock_risk_data.csv")
 except FileNotFoundError:
-    logger.warning("Mock risk data not found. Using empty DataFrame.")
-    data = pd.DataFrame()
+    logger.warning("Mock risk data not found. Using sample city data.")
+    # Sample cities with risk data
+    sample_data = [
+        {"city": "New York City", "lat": 40.7128, "lng": -74.0060, "flood_2024": 0.8, "heat_2024": 0.3, "storm_2024": 0.2},
+        {"city": "Los Angeles", "lat": 34.0522, "lng": -118.2437, "flood_2024": 0.2, "heat_2024": 0.9, "storm_2024": 0.1},
+        {"city": "London", "lat": 51.5074, "lng": -0.1278, "flood_2024": 0.5, "heat_2024": 0.4, "storm_2024": 0.3},
+        {"city": "Sydney", "lat": -33.8688, "lng": 151.2093, "flood_2024": 0.3, "heat_2024": 0.7, "storm_2024": 0.4},
+        {"city": "Mumbai", "lat": 19.0760, "lng": 72.8777, "flood_2024": 0.9, "heat_2024": 0.8, "storm_2024": 0.5},
+        {"city": "Lagos", "lat": 6.5244, "lng": 3.3792, "flood_2024": 0.6, "heat_2024": 0.9, "storm_2024": 0.3},
+        {"city": "Miami", "lat": 25.7617, "lng": -80.1918, "flood_2024": 0.7, "heat_2024": 0.6, "storm_2024": 0.8},
+        {"city": "Jakarta", "lat": -6.2088, "lng": 106.8456, "flood_2024": 0.8, "heat_2024": 0.7, "storm_2024": 0.4},
+        {"city": "Tokyo", "lat": 35.6762, "lng": 139.6503, "flood_2024": 0.4, "heat_2024": 0.5, "storm_2024": 0.6},
+        {"city": "São Paulo", "lat": -23.5505, "lng": -46.6333, "flood_2024": 0.5, "heat_2024": 0.6, "storm_2024": 0.2}
+    ]
+    data = pd.DataFrame(sample_data)
 
 
 def haversine(lat1, lon1, lat2, lon2):
@@ -188,3 +201,35 @@ def get_risk_data(lat: float, lng: float, year: int) -> Optional[dict]:
         "risk_level": risk_label(cri),
         "damage_estimate": damage,
     }
+
+
+def get_all_cities_risk(year: int) -> list:
+    """
+    Get risk data for all cities for a given year
+    Returns list of city risk data compatible with frontend expectations
+    """
+    if data.empty:
+        return []
+    
+    cities = []
+    for idx, row in data.iterrows():
+        # Get risk data for this city
+        risk_data = get_risk_data(row['lat'], row['lng'], year)
+        if risk_data:
+            # Convert to frontend-compatible format
+            cities.append({
+                "id": idx + 1,
+                "city": risk_data["city"],
+                "lat": risk_data["latitude"],
+                "lng": risk_data["longitude"],
+                "type": "Climate Risk",  # Generic type since we have multiple risks
+                "description": f"Climate risk assessment for {risk_data['city']} in {year}",
+                "risk": risk_data["climate_risk_index"] / 100.0,  # Convert to 0-1 scale
+                "flood_risk": risk_data["flood_risk"],
+                "heat_risk": risk_data["heat_risk"],
+                "storm_risk": risk_data["storm_risk"],
+                "risk_level": risk_data["risk_level"],
+                "damage_estimate": risk_data["damage_estimate"]
+            })
+    
+    return cities

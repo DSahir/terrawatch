@@ -28,26 +28,51 @@ TerraWatch is a city-agnostic, AI-powered climate risk intelligence platform tha
 ### Prerequisites
 
 - Python 3.9+
+- Node.js 16+
 - Featherless API key (get from https://featherless.ai)
 
-### Installation
+### Quick Start (Single Command)
 
-1. **Clone and setup:**
+```bash
+./start.sh
+```
+
+This will start both the backend API server (port 8001) and frontend React app (port 3000).
+
+### Manual Setup
+
+1. **Install backend dependencies:**
    ```bash
-   cd terrawatch
    pip install -r requirements.txt
    ```
 
-2. **Configure environment:**
+2. **Install frontend dependencies:**
+   ```bash
+   cd frontend
+   npm install
+   cd ..
+   ```
+
+3. **Configure environment:**
    ```bash
    cp .env.example .env
    # Edit .env and add your FEATHERLESS_API_KEY
    ```
 
-3. **Run the API:**
+4. **Start services:**
    ```bash
-   uvicorn backend.main:app --reload
+   # Terminal 1 - Backend
+   PYTHONPATH=/Users/dhanshri/Documents/hackathon/terrawatch python3 backend/main.py
+
+   # Terminal 2 - Frontend
+   cd frontend && npm start
    ```
+
+### Access Points
+
+- **Frontend App:** http://localhost:3000
+- **Backend API:** http://localhost:8001
+- **API Documentation:** http://localhost:8001/docs
 
 4. **Warmup demo cache (optional):**
    ```bash

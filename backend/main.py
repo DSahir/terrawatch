@@ -56,8 +56,9 @@ def root():
         "version": "1.0.0",
         "endpoints": [
             "GET /api/risk",
+            "GET /api/cities",
             "GET /api/search",
-            "POST /api/narrate",
+            "GET /api/narrate",
             "GET /api/insurance",
             "POST /api/analyze-satellite",
             "GET /api/demo-cache"
@@ -73,34 +74,55 @@ def health_check():
 # T3: RISK ENDPOINT
 # ============================================================================
 
-@app.get("/api/risk", response_model=RiskResponse)
+# ============================================================================
+# T3: RISK ENDPOINT
+# ============================================================================
+
+@app.get("/api/risk")
 async def get_risk(
-    lat: float = Query(..., ge=-90, le=90, description="Latitude"),
-    lng: float = Query(..., ge=-180, le=180, description="Longitude"),
+    lat = Query(None, description="Latitude (optional)"),
+    lng = Query(None, description="Longitude (optional)"),
     year: int = Query(2024, ge=2024, le=2050, description="Projection year")
 ):
     """
-    T3: Get climate risk data for a location and year
+    Get climate risk data
     
-    Returns:
-    - Flood, heat, and storm risk scores
-    - Climate Risk Index (0-100)
-    - Risk level classification
-    - Estimated economic damage
+    If lat/lng provided: Returns risk data for specific location
+    If lat/lng not provided: Returns risk data for all cities
     """
     try:
-        risk_data = get_risk_data(lat, lng, year)
-        
-        if risk_data is None:
-            raise HTTPException(
-                status_code=404,
-                detail="No risk data available for the given coordinates"
-            )
-        
-        return RiskResponse(**risk_data)
+        if lat is not None and lng is not None:
+            # Specific location query
+            risk_data = get_risk_data(lat, lng, year)
+            if risk_data is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No risk data available for the given coordinates"
+                )
+            return RiskResponse(**risk_data)
+        else:
+            # Return all cities
+            from backend.risk_engine import get_all_cities_risk
+            cities_data = get_all_cities_risk(year)
+            return cities_data
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching risk data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/cities")
+async def get_cities(year: int = Query(2024, ge=2024, le=2050, description="Projection year")):
+    """
+    Get all cities with risk data for a given year
+    """
+    try:
+        from backend.risk_engine import get_all_cities_risk
+        cities_data = get_all_cities_risk(year)
+        return cities_data
+    except Exception as e:
+        logger.error(f"Error fetching cities data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================================
@@ -123,7 +145,7 @@ async def search_cities(
                 "https://geocoding-api.open-meteo.com/v1/search",
                 params={
                     "name": q,
-                    "count": 10,
+                    "count": 4,
                     "language": "en",
                     "format": "json"
                 }
@@ -154,37 +176,35 @@ async def search_cities(
 # T4: NARRATION ENDPOINT
 # ============================================================================
 
-@app.post("/api/narrate", response_model=NarrateResponse)
+@app.get("/api/narrate")
 async def narrate_risk(
     city: str = Query(..., description="City name"),
-    lat: float = Query(..., ge=-90, le=90, description="Latitude"),
-    lng: float = Query(..., ge=-180, le=180, description="Longitude"),
-    year: int = Query(2024, ge=2024, le=2050, description="Projection year"),
-    live: bool = Query(False, description="Use live AI inference (True) or cache (False)")
+    year: int = Query(2024, ge=2024, le=2050, description="Projection year")
 ):
     """
-    T4: Generate AI-powered risk narration
-    Uses Qwen-72B to create plain-English risk brief + adaptation actions
-    
-    Parameters:
-    - live: Set to True for live AI inference, False to use cache
+    Generate AI-powered risk narration for a city
     """
     try:
+        # Find city coordinates from our data
+        from backend.risk_engine import data
+        city_row = data[data['city'].str.lower() == city.lower()]
+        if city_row.empty:
+            raise HTTPException(status_code=404, detail=f"City '{city}' not found")
+        
+        lat = float(city_row.iloc[0]['lat'])
+        lng = float(city_row.iloc[0]['lng'])
+        
         # Get risk data
         risk_data = get_risk_data(lat, lng, year)
         if risk_data is None:
             raise HTTPException(status_code=404, detail="Risk data not found")
         
-        # Check cache first if not live
+        # Check cache first
         cache_key = f"{city}_{year}_{lat:.2f}_{lng:.2f}"
         
-        if not live and cache_key in demo_cache:
+        if cache_key in demo_cache:
             logger.info(f"Using cached narration for {cache_key}")
-            return NarrateResponse(
-                risk_brief=demo_cache[cache_key]["risk_brief"],
-                adaptation_actions=demo_cache[cache_key]["adaptation_actions"],
-                cached=True
-            )
+            return demo_cache[cache_key]
         
         # Generate using Featherless AI (Qwen-72B)
         try:
@@ -202,11 +222,7 @@ async def narrate_risk(
             # Cache the result
             demo_cache[cache_key] = narration_data
             
-            return NarrateResponse(
-                risk_brief=narration_data.get("risk_brief", ""),
-                adaptation_actions=narration_data.get("adaptation_actions", []),
-                cached=False
-            )
+            return narration_data
         
         except Exception as ai_error:
             logger.error(f"AI generation failed: {ai_error}")
@@ -216,12 +232,12 @@ async def narrate_risk(
                 "Implement community-based early warning systems and evacuation plans for flood events",
                 "Expand urban green spaces and cool roofs to reduce heat island effects and lower energy demand"
             ]
-            
-            return NarrateResponse(
-                risk_brief=fallback_brief,
-                adaptation_actions=fallback_actions,
-                cached=False
-            )
+            1
+            return {
+                "risk_brief": fallback_brief,
+                "adaptation_actions": fallback_actions,
+                "cached": False
+            }
     
     except HTTPException:
         raise
@@ -233,24 +249,24 @@ async def narrate_risk(
 # T5: INSURANCE ENDPOINT
 # ============================================================================
 
-@app.get("/api/insurance", response_model=InsuranceResponse)
+@app.get("/api/insurance")
 async def get_insurance(
     city: str = Query(..., description="City name"),
-    lat: float = Query(..., ge=-90, le=90, description="Latitude"),
-    lng: float = Query(..., ge=-180, le=180, description="Longitude"),
-    year: int = Query(2024, ge=2024, le=2050, description="Projection year"),
-    live: bool = Query(False, description="Use live AI inference")
+    year: int = Query(2024, ge=2024, le=2050, description="Projection year")
 ):
     """
-    T5: Calculate climate-adjusted insurance premiums
-    Uses Qwen-7B to generate premium increase explanation
-    
-    Parameters:
-    - Base premium: $1,200
-    - Multipliers based on flood (2.5x weight), heat (1.5x), storm (2.0x)
-    - live: Set to True for AI explanation, False for fallback
+    Calculate climate-adjusted insurance premiums for a city
     """
     try:
+        # Find city coordinates from our data
+        from backend.risk_engine import data
+        city_row = data[data['city'].str.lower() == city.lower()]
+        if city_row.empty:
+            raise HTTPException(status_code=404, detail=f"City '{city}' not found")
+        
+        lat = float(city_row.iloc[0]['lat'])
+        lng = float(city_row.iloc[0]['lng'])
+        
         # Get risk data
         risk_data = get_risk_data(lat, lng, year)
         if risk_data is None:
@@ -259,10 +275,9 @@ async def get_insurance(
         # Check cache
         cache_key = f"insurance_{city}_{year}_{lat:.2f}_{lng:.2f}"
         
-        if not live and cache_key in demo_cache:
+        if cache_key in demo_cache:
             logger.info(f"Using cached insurance for {cache_key}")
-            cached_data = demo_cache[cache_key]
-            return InsuranceResponse(**cached_data)
+            return demo_cache[cache_key]
         
         # Calculate premium
         insurance_data = await insurance_engine.get_insurance_estimate(
@@ -270,13 +285,13 @@ async def get_insurance(
             flood_risk=risk_data["flood_risk"],
             heat_risk=risk_data["heat_risk"],
             storm_risk=risk_data["storm_risk"],
-            use_live_ai=live
+            use_live_ai=False
         )
         
         # Cache result
         demo_cache[cache_key] = insurance_data
         
-        return InsuranceResponse(**insurance_data)
+        return insurance_data
     
     except HTTPException:
         raise
@@ -420,4 +435,4 @@ async def warmup_demo_cache():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)
