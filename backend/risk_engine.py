@@ -2,14 +2,25 @@ import pandas as pd
 from math import radians, sin, cos, sqrt, atan2
 import logging
 from typing import Optional
+import os
 
 logger = logging.getLogger(__name__)
 
+# Get the project root directory
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CSV_PATH = os.path.join(PROJECT_ROOT, "data", "mock_risk_data.csv")
+
 # Load mock data
 try:
-    data = pd.read_csv("data/mock_risk_data.csv")
+    data = pd.read_csv(CSV_PATH)
+    # Ensure numeric columns are floats, not strings
+    numeric_columns = ['lat', 'lng', 'flood_2024', 'heat_2024', 'storm_2024', 'flood_2030', 'heat_2030', 'storm_2030', 'flood_2050', 'heat_2050', 'storm_2050']
+    for col in numeric_columns:
+        if col in data.columns:
+            data[col] = pd.to_numeric(data[col], errors='coerce')
+    logger.info(f"Loaded risk data from {CSV_PATH}")
 except FileNotFoundError:
-    logger.warning("Mock risk data not found. Using sample city data.")
+    logger.warning(f"Mock risk data not found at {CSV_PATH}. Using sample city data.")
     # Sample cities with risk data
     sample_data = [
         {"city": "New York City", "lat": 40.7128, "lng": -74.0060, "flood_2024": 0.8, "heat_2024": 0.3, "storm_2024": 0.2},
