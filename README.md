@@ -61,10 +61,14 @@ This will start both the backend API server (port 8001) and frontend React app (
 
 4. **Start services:**
    ```bash
-   # Terminal 1 - Backend
+   # Terminal 1 — Backend
    PYTHONPATH=. python3 backend/main.py
 
-   # Terminal 2 - Frontend
+   # OR even simpler (cross-platform):
+   cd terrawatch/
+   python -m uvicorn backend.main:app --reload --port 8001
+
+   # Terminal 2 — Frontend
    cd frontend && npm start
    ```
 
