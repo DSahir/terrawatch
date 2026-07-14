@@ -8,21 +8,6 @@ TerraWatch is a city-agnostic, AI-powered climate risk intelligence platform tha
 
 ---
 
-## 📋 Task Completion Status
-
-| Task | Name | Status | Duration | Dependencies |
-|------|------|--------|----------|--------------|
-| T1 | Project scaffold + repo init | ✅ **DONE** | 45 min | — |
-| T2 | Risk data table builder | ✅ **DONE** | 60 min | T1 |
-| T3 | /api/risk endpoint | ✅ **DONE** | 60 min | T2 |
-| T4 | Featherless narration (Qwen-72B) | ✅ **DONE** | 90 min | T3 |
-| T5 | Insurance premium calculator | ✅ **DONE** | 60 min | T3 |
-| T6 | City search + geocoding | ✅ **DONE** | 60 min | T1 |
-| T7 | Pre-cache demo scenarios | ✅ **DONE** | 60 min | T4, T5 |
-| **BONUS** | Satellite imagery analysis (Gemma-3-27B) | ✅ **DONE** | — | — |
-
----
-
 ## 🚀 Getting Started
 
 ### Prerequisites
