@@ -24,7 +24,7 @@ async def test_health_check():
     print("=" * 70)
     
     async with httpx.AsyncClient() as client:
-        response = await client.get(f"{BASE_URL}/health")
+        response = await client.get(f"{BASE_URL}/api/v1/health")
         print(f"Status: {response.json()}\n")
 
 
@@ -39,7 +39,7 @@ async def test_city_search():
     async with httpx.AsyncClient() as client:
         for city in cities:
             response = await client.get(
-                f"{BASE_URL}/api/search",
+                f"{BASE_URL}/api/v1/search",
                 params={"q": city}
             )
             results = response.json()
@@ -71,7 +71,7 @@ async def test_risk_endpoint():
             
             for year in test["years"]:
                 response = await client.get(
-                    f"{BASE_URL}/api/risk",
+                    f"{BASE_URL}/api/v1/risk",
                     params={
                         "lat": test["lat"],
                         "lng": test["lng"],
@@ -109,7 +109,7 @@ async def test_narration():
             print(f"\n🌏 {test['city']} ({test['year']}) - Using Cache (live=false):")
             
             response = await client.post(
-                f"{BASE_URL}/api/narrate",
+                f"{BASE_URL}/api/v1/narrate",
                 params={
                     "city": test["city"],
                     "lat": test["lat"],
@@ -150,7 +150,7 @@ async def test_insurance():
             print(f"\n🏙️  {test['city']} ({test['year']}):")
             
             response = await client.get(
-                f"{BASE_URL}/api/insurance",
+                f"{BASE_URL}/api/v1/insurance",
                 params={
                     "city": test["city"],
                     "lat": test["lat"],
@@ -186,7 +186,7 @@ async def test_cache_management():
     
     async with httpx.AsyncClient() as client:
         # Check current cache
-        response = await client.get(f"{BASE_URL}/api/demo-cache")
+        response = await client.get(f"{BASE_URL}/api/v1/demo-cache")
         data = response.json()
         
         print(f"\n📊 Current Cache Status:")
@@ -195,7 +195,7 @@ async def test_cache_management():
         
         # Optionally warmup cache
         print(f"\n🔥 Warming up cache with 9 scenarios...")
-        response = await client.post(f"{BASE_URL}/api/warmup-cache")
+        response = await client.post(f"{BASE_URL}/api/v1/warmup-cache")
         warmup_data = response.json()
         
         print(f"   Successful: {warmup_data['results']['successful']}")

@@ -34,11 +34,6 @@ INSURANCE_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 INSURANCE_MAX_TOKENS = 100
 INSURANCE_TEMPERATURE = 0.5
 
-# T6: City Query Interpretation
-QUERY_MODEL = "Qwen/Qwen2.5-7B-Instruct"
-QUERY_MAX_TOKENS = 100
-QUERY_TEMPERATURE = 0.3
-
 # BONUS: Vision Model for satellite analysis
 VISION_MODEL = "Gemma-3-27B-Vision"
 VISION_MAX_TOKENS = 500
@@ -91,3 +86,17 @@ DEMO_SCENARIOS = [
 # ============================================================================
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
+# ============================================================================
+# SECURITY & CORS CONFIGURATION
+# ============================================================================
+
+# Comma-separated list of allowed origins, default: http://localhost:3000
+ALLOWED_ORIGINS = [
+    origin.strip() 
+    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",") 
+    if origin.strip()
+]
+
+# Optional API key required for expensive/sensitive operations
+TERRAWATCH_API_KEY = os.getenv("TERRAWATCH_API_KEY")

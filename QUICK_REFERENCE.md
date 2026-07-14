@@ -3,7 +3,7 @@
 ## 🚀 START SERVER
 
 ```bash
-cd /Users/sameeksha/Documents/Career/hackthon/girls_in_code/terrawatch
+cd /path/to/terrawatch
 source venv/bin/activate
 uvicorn backend.main:app --reload
 ```

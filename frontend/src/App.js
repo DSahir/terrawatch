@@ -1,8 +1,56 @@
 import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Tooltip, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet.markercluster/dist/MarkerCluster.css';
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
+import L from 'leaflet';
+import 'leaflet.markercluster';
 import axios from 'axios';
 import config from './config';
+
+// Marker cluster component to handle clustering using native Leaflet MarkerCluster
+function MarkerClusterGroup({ cities, onMarkerClick, getColor, getRiskLevel }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map) return;
+
+    // Create marker cluster group
+    const clusterGroup = L.markerClusterGroup();
+
+    cities.forEach(city => {
+      // Handle both city.risk (0-1 scale) and fallback to climate_risk_index (0-100 scale)
+      const riskVal = city.risk !== undefined ? city.risk : (city.climate_risk_index !== undefined ? city.climate_risk_index / 100 : 0.5);
+      const markerColor = getColor(riskVal);
+      const marker = L.circleMarker([city.lat, city.lng], {
+        radius: 15,
+        color: markerColor,
+        fillColor: markerColor,
+        fillOpacity: 0.7,
+        weight: 2
+      });
+
+      // Bind tooltip
+      marker.bindTooltip(`${city.city} - ${getRiskLevel(riskVal)}`);
+
+      // Bind click handler
+      marker.on('click', () => {
+        onMarkerClick(city);
+      });
+
+      clusterGroup.addLayer(marker);
+    });
+
+    map.addLayer(clusterGroup);
+
+    return () => {
+      map.removeLayer(clusterGroup);
+    };
+  }, [map, cities, onMarkerClick, getColor, getRiskLevel]);
+
+  return null;
+}
+
 
 // Map controller component to handle flyTo
 function MapController({ flyTo }) {
@@ -38,14 +86,14 @@ function App() {
 
   // Fetch all cities when year changes
   useEffect(() => {
-    axios.get(`${config.API_BASE}/api/cities?year=${debouncedYear}`)
+    axios.get(`${config.API_BASE}/api/v1/cities?year=${debouncedYear}`)
       .then(response => {
-        setDisasters(response.data);
+        setCities(response.data);
         setBackendError(false);
       })
       .catch(error => {
         console.error('Failed to fetch risk data:', error);
-        setDisasters([]);
+        setCities([]);
         setBackendError(true);
       });
   }, [debouncedYear]);
@@ -61,10 +109,12 @@ function App() {
 
     const fetchCityData = async () => {
       setLoading(true);
+      setNarration(null);
+      setInsurance(null);
       try {
         // Fetch comprehensive real-time analysis (includes trends and AI insights)
         const realtimeResponse = await axios.get(
-          `${config.API_BASE}/api/realtime-analysis?lat=${selectedCity.lat}&lng=${selectedCity.lng}&year=${debouncedYear}&city=${encodeURIComponent(selectedCity.city)}`
+          `${config.API_BASE}/api/v1/realtime-analysis?lat=${selectedCity.lat}&lng=${selectedCity.lng}&year=${debouncedYear}&city=${encodeURIComponent(selectedCity.city)}`
         );
         
         // Extract current risks for display
@@ -82,7 +132,7 @@ function App() {
         
         // Fetch insurance data separately
         const insuranceResponse = await axios.get(
-          `${config.API_BASE}/api/insurance?city=${encodeURIComponent(selectedCity.city)}&year=${debouncedYear}`
+          `${config.API_BASE}/api/v1/insurance?city=${encodeURIComponent(selectedCity.city)}&year=${debouncedYear}`
         );
         setInsurance(insuranceResponse.data);
 
@@ -93,7 +143,7 @@ function App() {
         // Fallback: Try basic risk endpoint
         try {
           const riskResponse = await axios.get(
-            `${config.API_BASE}/api/risk?lat=${selectedCity.lat}&lng=${selectedCity.lng}&year=${debouncedYear}`
+            `${config.API_BASE}/api/v1/risk?lat=${selectedCity.lat}&lng=${selectedCity.lng}&year=${debouncedYear}`
           );
           setSelectedCityRiskData(riskResponse.data);
           setNarration({
@@ -132,33 +182,12 @@ function App() {
   const handleMarkerClick = (city) => {
     setSelectedCity(city);
     setSidePanelOpen(true);
-    setLoading(true);
-    setNarration('');
-    setInsurance(null);
-
-    // Fetch narration and insurance data
-    Promise.all([
-      axios.get(`${config.API_BASE}/api/narrate?city=${encodeURIComponent(disaster.city)}&year=${debouncedYear}`),
-      axios.get(`${config.API_BASE}/api/insurance?city=${encodeURIComponent(disaster.city)}&year=${debouncedYear}`)
-    ]).then(([narrateRes, insuranceRes]) => {
-      setNarration(narrateRes.data);
-      setInsurance(insuranceRes.data);
-      setLoading(false);
-    }).catch(error => {
-      console.error('Failed to fetch city data:', error);
-      setNarration({
-        risk_brief: 'Unable to load AI analysis at this time. Please try again later.',
-        adaptation_actions: []
-      });
-      setInsurance(null);
-      setLoading(false);
-    });
   };
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
 
-    axios.get(`${config.API_BASE}/api/search?q=${encodeURIComponent(searchQuery)}`)
+    axios.get(`${config.API_BASE}/api/v1/search?q=${encodeURIComponent(searchQuery)}`)
       .then(response => {
         const results = response.data;
         if (results && results.length > 0) {
@@ -234,23 +263,13 @@ function App() {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             />
-            {/* Display all cities */}
-            {cities.map((city, index) => (
-              <CircleMarker
-                key={index}
-                center={[city.lat, city.lng]}
-                radius={15}
-                color={getColor(city.climate_risk_index / 100)}
-                fillColor={getColor(city.climate_risk_index / 100)}
-                fillOpacity={0.7}
-                weight={2}
-                eventHandlers={{
-                  click: () => handleMarkerClick(city),
-                }}
-              >
-                <Tooltip>{city.city} - {getRiskLevel(city.climate_risk_index / 100)}</Tooltip>
-              </CircleMarker>
-            ))}
+            {/* Display all cities with clustering */}
+            <MarkerClusterGroup
+              cities={cities}
+              onMarkerClick={handleMarkerClick}
+              getColor={getColor}
+              getRiskLevel={getRiskLevel}
+            />
             {/* Display searched city if different */}
             {searchedCity && !cities.find(c => c.city === searchedCity.city) && (
               <CircleMarker

@@ -13,26 +13,10 @@ class RiskResponse(BaseModel):
     risk_level: str
     damage_estimate: float
 
-class NarrateRequest(BaseModel):
-    city: str
-    latitude: float
-    longitude: float
-    year: int
-    flood_risk: float
-    heat_risk: float
-    storm_risk: float
-    damage_estimate: float
-
 class NarrateResponse(BaseModel):
     risk_brief: str
     adaptation_actions: List[str]
     cached: bool = False
-
-class InsuranceRequest(BaseModel):
-    city: str
-    flood_risk: float
-    heat_risk: float
-    storm_risk: float
 
 class InsuranceResponse(BaseModel):
     base_premium: float
@@ -57,3 +41,78 @@ class VisionAnalysisResponse(BaseModel):
     detected_features: List[str]
     risk_assessment: str
     confidence: float
+
+class RootResponse(BaseModel):
+    message: str
+    version: str
+    endpoints: List[str]
+
+class HealthResponse(BaseModel):
+    status: str
+
+class CityRiskResponse(BaseModel):
+    id: int
+    city: str
+    lat: float
+    lng: float
+    type: str
+    description: str
+    risk: float
+    flood_risk: float
+    heat_risk: float
+    storm_risk: float
+    risk_level: str
+    damage_estimate: float
+
+class RealtimeLocation(BaseModel):
+    city: str
+    latitude: float
+    longitude: float
+
+class RealtimeCurrentRisks(BaseModel):
+    flood_risk: float
+    heat_risk: float
+    storm_risk: float
+    climate_risk_index: int
+    risk_level: str
+    damage_estimate: float
+
+class TrendItem(BaseModel):
+    trajectory: str
+    value_2024: float
+    value_2035: float
+    value_2050: float
+    years_to_critical: Optional[int] = None
+
+class RiskTrends(BaseModel):
+    flood: TrendItem
+    heat: TrendItem
+    storm: TrendItem
+
+class AIInsights(BaseModel):
+    risk_brief: str
+    adaptation_actions: List[str]
+    cached: bool = False
+
+class RealtimeAnalysisResponse(BaseModel):
+    location: RealtimeLocation
+    current_risks: RealtimeCurrentRisks
+    risk_trends: Optional[RiskTrends] = None
+    ai_insights: Optional[AIInsights] = None
+
+class DemoCacheResponse(BaseModel):
+    status: str
+    cached_items: Optional[int] = None
+    cache_keys: Optional[List[str]] = None
+    items: Optional[int] = None
+
+class WarmupResults(BaseModel):
+    successful: int
+    failed: int
+    errors: List[str]
+
+class WarmupCacheResponse(BaseModel):
+    warmup_complete: bool
+    results: WarmupResults
+    total_cached: int
+

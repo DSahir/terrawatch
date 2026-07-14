@@ -1,4 +1,4 @@
-import pandas as pd
+import csv
 from math import radians, sin, cos, sqrt, atan2
 import logging
 from typing import Optional
@@ -6,18 +6,28 @@ import os
 
 logger = logging.getLogger(__name__)
 
+from backend.config import IPCC_MULTIPLIER_2050
+
 # Get the project root directory
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CSV_PATH = os.path.join(PROJECT_ROOT, "data", "mock_risk_data.csv")
 
 # Load mock data
+data = []
 try:
-    data = pd.read_csv(CSV_PATH)
-    # Ensure numeric columns are floats, not strings
-    numeric_columns = ['lat', 'lng', 'flood_2024', 'heat_2024', 'storm_2024', 'flood_2030', 'heat_2030', 'storm_2030', 'flood_2050', 'heat_2050', 'storm_2050']
-    for col in numeric_columns:
-        if col in data.columns:
-            data[col] = pd.to_numeric(data[col], errors='coerce')
+    with open(CSV_PATH, mode='r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            parsed_row = {}
+            for k, v in row.items():
+                if k in ['lat', 'lng'] or k.startswith('flood_') or k.startswith('heat_') or k.startswith('storm_'):
+                    try:
+                        parsed_row[k] = float(v)
+                    except ValueError:
+                        parsed_row[k] = v
+                else:
+                    parsed_row[k] = v
+            data.append(parsed_row)
     logger.info(f"Loaded risk data from {CSV_PATH}")
 except FileNotFoundError:
     logger.warning(f"Mock risk data not found at {CSV_PATH}. Using sample city data.")
@@ -34,7 +44,7 @@ except FileNotFoundError:
         {"city": "Tokyo", "lat": 35.6762, "lng": 139.6503, "flood_2024": 0.4, "heat_2024": 0.5, "storm_2024": 0.6},
         {"city": "São Paulo", "lat": -23.5505, "lng": -46.6333, "flood_2024": 0.5, "heat_2024": 0.6, "storm_2024": 0.2}
     ]
-    data = pd.DataFrame(sample_data)
+    data = sample_data
 
 
 def haversine(lat1, lon1, lat2, lon2):
@@ -49,18 +59,84 @@ def haversine(lat1, lon1, lat2, lon2):
     return R * c
 
 
-def nearest_point(lat: float, lng: float):
-    """Find nearest point in data to given coordinates"""
-    if data.empty:
-        return None
-    
-    distances = data.apply(
-        lambda row: haversine(lat, lng, row.lat, row.lng),
-        axis=1
-    )
+class KDNode:
+    def __init__(self, point: dict, left=None, right=None):
+        self.point = point
+        self.left = left
+        self.right = right
 
-    idx = distances.idxmin()
-    return data.iloc[idx]
+
+class KDTree:
+    def __init__(self, points: list):
+        self.root = self._build(points, depth=0)
+
+    def _build(self, points: list, depth: int):
+        if not points:
+            return None
+
+        # Alternate axis: 0 for lat, 1 for lng
+        axis = depth % 2
+
+        # Sort points by the chosen axis
+        points.sort(key=lambda p: float(p['lat']) if axis == 0 else float(p['lng']))
+
+        median = len(points) // 2
+
+        return KDNode(
+            point=points[median],
+            left=self._build(points[:median], depth + 1),
+            right=self._build(points[median + 1:], depth + 1)
+        )
+
+    def find_nearest(self, lat: float, lng: float):
+        best = {"point": None, "dist": float('inf')}
+
+        def _search(node, depth):
+            if node is None:
+                return
+
+            # Distance from target to current node's point using Haversine
+            d = haversine(lat, lng, float(node.point['lat']), float(node.point['lng']))
+
+            if d < best["dist"]:
+                best["dist"] = d
+                best["point"] = node.point
+
+            axis = depth % 2
+            target_val = lat if axis == 0 else lng
+            node_val = float(node.point['lat']) if axis == 0 else float(node.point['lng'])
+
+            # Determine which side to go first
+            next_node = node.left if target_val < node_val else node.right
+            other_node = node.right if target_val < node_val else node.left
+
+            _search(next_node, depth + 1)
+
+            # Pruning step: check if the perpendicular distance to the splitting plane could be smaller than current best
+            # Lat degree is ~111.12 km. Lng degree is ~111.12 * cos(lat) km.
+            if axis == 0:
+                perpend_dist = abs(lat - node_val) * 111.12
+            else:
+                perpend_dist = abs(lng - node_val) * 111.12 * abs(cos(radians(lat)))
+
+            if perpend_dist < best["dist"]:
+                _search(other_node, depth + 1)
+
+        _search(self.root, depth=0)
+        return best["point"]
+
+
+# Build KD-tree from loaded data
+kdtree = None
+if data:
+    kdtree = KDTree(data.copy())
+
+
+def nearest_point(lat: float, lng: float):
+    """Find nearest point in data to given coordinates using O(log N) KD-Tree search"""
+    if not kdtree:
+        return None
+    return kdtree.find_nearest(lat, lng)
 
 
 def apply_ipcc_multiplier(base_risk: float, year: int) -> float:
@@ -74,12 +150,13 @@ def apply_ipcc_multiplier(base_risk: float, year: int) -> float:
     if year <= 2024:
         return base_risk * 1.0
     elif year >= 2050:
-        return base_risk * 1.7
+        return base_risk * IPCC_MULTIPLIER_2050
     else:
         # Linear interpolation
         years_from_2024 = year - 2024
         progress = years_from_2024 / (2050 - 2024)
-        multiplier = 1.0 + (0.7 * progress)
+        diff = IPCC_MULTIPLIER_2050 - 1.0
+        multiplier = 1.0 + (diff * progress)
         return base_risk * multiplier
 
 
@@ -219,13 +296,13 @@ def get_all_cities_risk(year: int) -> list:
     Get risk data for all cities for a given year
     Returns list of city risk data compatible with frontend expectations
     """
-    if data.empty:
+    if not data:
         return []
     
     cities = []
-    for idx, row in data.iterrows():
+    for idx, row in enumerate(data):
         # Get risk data for this city
-        risk_data = get_risk_data(row['lat'], row['lng'], year)
+        risk_data = get_risk_data(float(row['lat']), float(row['lng']), year)
         if risk_data:
             # Convert to frontend-compatible format
             cities.append({
@@ -244,3 +321,55 @@ def get_all_cities_risk(year: int) -> list:
             })
     
     return cities
+
+
+def get_risk_trends(lat: float, lng: float, current_year: int = 2024) -> Optional[dict]:
+    """
+    Calculate risk trends for flood, heat, and storm between 2024 and 2050
+    """
+    point = nearest_point(lat, lng)
+    if point is None:
+        return None
+    
+    # Calculate values for key milestone years
+    risks_2024 = interpolate_risk(point, 2024)
+    risks_2035 = interpolate_risk(point, 2035)
+    risks_2050 = interpolate_risk(point, 2050)
+    
+    if not risks_2024 or not risks_2035 or not risks_2050:
+        return None
+        
+    trends = {}
+    for hazard in ["flood", "heat", "storm"]:
+        val_2024 = risks_2024[f"{hazard}_risk"]
+        val_2035 = risks_2035[f"{hazard}_risk"]
+        val_2050 = risks_2050[f"{hazard}_risk"]
+        
+        # Determine trajectory
+        diff = val_2050 - val_2024
+        if diff > 0.05:
+            trajectory = "Increasing"
+        elif diff < -0.05:
+            trajectory = "Decreasing"
+        else:
+            trajectory = "Stable"
+            
+        # Calculate years to critical threshold (> 70% or 0.7)
+        threshold = 0.70
+        years_to_critical = None
+        
+        for y in range(max(current_year, 2024), 2051):
+            r = interpolate_risk(point, y)
+            if r and r[f"{hazard}_risk"] >= threshold:
+                years_to_critical = y - current_year
+                break
+                
+        trends[hazard] = {
+            "trajectory": trajectory,
+            "value_2024": val_2024,
+            "value_2035": val_2035,
+            "value_2050": val_2050,
+            "years_to_critical": years_to_critical
+        }
+        
+    return trends

@@ -10,7 +10,7 @@ All 7 tasks + 1 bonus feature fully implemented with complete Featherless AI int
 
 ### Terminal 1: Start the Server
 ```bash
-cd /Users/sameeksha/Documents/Career/hackthon/girls_in_code/terrawatch
+cd /path/to/terrawatch
 source venv/bin/activate
 uvicorn backend.main:app --reload
 ```

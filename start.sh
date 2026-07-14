@@ -15,7 +15,7 @@ trap cleanup EXIT
 # Start backend in background
 echo "📡 Starting backend server on port 8001..."
 cd backend
-PYTHONPATH=/Users/dhanshri/Documents/hackathon/terrawatch python3 main.py &
+PYTHONPATH=.. python3 main.py &
 BACKEND_PID=$!
 cd ..
 

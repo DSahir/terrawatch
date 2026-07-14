@@ -5,7 +5,7 @@
 
 set -e
 
-PROJECT_DIR="/Users/sameeksha/Documents/Career/hackthon/girls_in_code/terrawatch"
+PROJECT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 echo "🚀 Starting TerraWatch Full Stack..."
 echo ""

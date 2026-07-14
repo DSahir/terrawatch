@@ -184,7 +184,7 @@ git push origin main
 ## Complete Command Sequence (Copy & Paste)
 
 ```bash
-cd /Users/sameeksha/Documents/Career/hackthon/girls_in_code/terrawatch
+cd /path/to/terrawatch
 
 # 1. Create branch
 git checkout -b feature/terrawatch-complete

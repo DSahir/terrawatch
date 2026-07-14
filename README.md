@@ -62,7 +62,7 @@ This will start both the backend API server (port 8001) and frontend React app (
 4. **Start services:**
    ```bash
    # Terminal 1 - Backend
-   PYTHONPATH=/Users/dhanshri/Documents/hackathon/terrawatch python3 backend/main.py
+   PYTHONPATH=. python3 backend/main.py
 
    # Terminal 2 - Frontend
    cd frontend && npm start
@@ -142,7 +142,7 @@ Uses free Open-Meteo geocoding API (no API key required).
 
 ### T4: Generate Risk Narration (Qwen-72B)
 ```bash
-POST /api/narrate?city=Mumbai&lat=19.08&lng=72.88&year=2050&live=true
+GET /api/narrate?city=Mumbai&lat=19.08&lng=72.88&year=2050&live=true
 ```
 
 **Response:**
@@ -189,6 +189,62 @@ heat_mult = 1.0 + (heat_risk × 1.5)
 storm_mult = 1.0 + (storm_risk × 2.0)
 total_mult = flood_mult × heat_mult × storm_mult (capped at 5.0x)
 adjusted_premium = base_premium × total_mult
+```
+
+---
+
+### Get Real-Time Climate Risk & Trends Analysis
+```bash
+GET /api/realtime-analysis?lat=19.08&lng=72.88&year=2050&city=Mumbai&live=true
+```
+
+**Response:**
+```json
+{
+  "location": {
+    "city": "Mumbai",
+    "latitude": 19.08,
+    "longitude": 72.88
+  },
+  "current_risks": {
+    "flood_risk": 0.595,
+    "heat_risk": 0.567,
+    "storm_risk": 0.255,
+    "climate_risk_index": 57,
+    "risk_level": "High",
+    "damage_estimate": 1245000.0
+  },
+  "risk_trends": {
+    "flood": {
+      "trajectory": "Increasing",
+      "value_2024": 0.9,
+      "value_2035": 1.0,
+      "value_2050": 1.0,
+      "years_to_critical": 0
+    },
+    "heat": {
+      "trajectory": "Increasing",
+      "value_2024": 0.8,
+      "value_2035": 0.96,
+      "value_2050": 1.0,
+      "years_to_critical": 0
+    },
+    "storm": {
+      "trajectory": "Increasing",
+      "value_2024": 0.5,
+      "value_2035": 0.6,
+      "value_2050": 0.85,
+      "years_to_critical": 15
+    }
+  },
+  "ai_insights": {
+    "risk_brief": "Mumbai faces severe flood risk by 2050 (59.5%), with combined heat exposure creating compound climate stress...",
+    "adaptation_actions": [
+      "Implement community-based early warning systems...",
+      "Expand mangrove restoration..."
+    ]
+  }
+}
 ```
 
 ---
