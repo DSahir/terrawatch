@@ -62,9 +62,6 @@ This will start both the backend API server (port 8001) and frontend React app (
 4. **Start services:**
    ```bash
    # Terminal 1 — Backend
-   PYTHONPATH=. python3 backend/main.py
-
-   # OR even simpler (cross-platform):
    cd terrawatch/
    python -m uvicorn backend.main:app --reload --port 8001
 
@@ -78,7 +75,7 @@ This will start both the backend API server (port 8001) and frontend React app (
 - **Backend API:** http://localhost:8001
 - **API Documentation:** http://localhost:8001/docs
 
-4. **Warmup demo cache (optional):**
+5. **Warmup demo cache (optional):**
    ```bash
    python scripts/warmup_cache.py
    ```
