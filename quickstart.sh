@@ -64,8 +64,8 @@ python3 -c "
 from backend.config import FEATHERLESS_API_KEY, BASE_URL
 from backend.models import RiskResponse, NarrateResponse
 from backend.risk_engine import get_risk_data
-from backend.insurance_engine import InsuranceEngine
-from backend.ai_client import FeatherlessAIClient
+from backend.insurance_engine import get_insurance_estimate
+from backend.ai_client import generate_narration
 print('✓ All imports successful')
 " || {
     echo "❌ Import test failed"

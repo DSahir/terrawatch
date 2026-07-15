@@ -97,6 +97,7 @@ ALLOWED_ORIGINS = [
     for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",") 
     if origin.strip()
 ]
+print(f"DEBUG: ALLOWED_ORIGINS = {ALLOWED_ORIGINS}")
 
 # Optional API key required for expensive/sensitive operations
 TERRAWATCH_API_KEY = os.getenv("TERRAWATCH_API_KEY")

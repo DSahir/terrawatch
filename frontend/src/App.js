@@ -38,7 +38,27 @@ function MarkerClusterGroup({ cities, onMarkerClick, getColor, getRiskLevel }) {
         onMarkerClick(city);
       });
 
+      // ARIA label attributes for accessibility (Bug 12)
+      marker.on('add', (e) => {
+        const el = e.target.getElement();
+        if (el) {
+          el.setAttribute('aria-label', `${city.city} - ${getRiskLevel(riskVal)} Risk`);
+          el.setAttribute('role', 'img');
+        }
+      });
+
       clusterGroup.addLayer(marker);
+    });
+
+    // Hover tooltip for cluster details (Bug 9)
+    clusterGroup.on('clustermouseover', (event) => {
+      const markers = event.layer.getAllChildMarkers();
+      const cityNames = markers.map(m => {
+        const tooltip = m.getTooltip();
+        return tooltip ? tooltip.getContent().split(' - ')[0] : '';
+      }).filter(Boolean);
+      
+      event.layer.bindTooltip(cityNames.join(', '), { direction: 'top', permanent: false }).openTooltip();
     });
 
     map.addLayer(clusterGroup);
@@ -64,8 +84,9 @@ function MapController({ flyTo }) {
 }
 
 function App() {
-  const [selectedYear, setSelectedYear] = useState(2024);
-  const [debouncedYear, setDebouncedYear] = useState(2024);
+  const currentYear = new Date().getFullYear();
+  const [selectedYear, setSelectedYear] = useState(currentYear);
+  const [debouncedYear, setDebouncedYear] = useState(currentYear);
   const [cities, setCities] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchedCity, setSearchedCity] = useState(null);
@@ -77,6 +98,7 @@ function App() {
   const [insurance, setInsurance] = useState(null);
   const [flyTo, setFlyTo] = useState(null);
   const [backendError, setBackendError] = useState(false);
+  const [aboutModalOpen, setAboutModalOpen] = useState(false);
 
   // Debounce year selection
   useEffect(() => {
@@ -192,34 +214,114 @@ function App() {
         const results = response.data;
         if (results && results.length > 0) {
           const result = results[0]; // Take the first result
-          // Fly to location
-          setFlyTo({ center: [result.latitude, result.longitude], zoom: 10 });
-          // Create a city object for the marker (without risk data initially)
-          const searchedCityData = {
-            city: result.city,
-            lat: result.latitude,
-            lng: result.longitude,
-            risk: 0.5, // Default risk for searched cities
-            risk_level: 'Unknown',
-            type: 'Searched Location'
-          };
-          setSearchedCity(searchedCityData);
+          
+          // Check if this city already exists in the predefined list (case-insensitive) (Bug 11)
+          const existingCity = cities.find(c => c.city.toLowerCase() === result.city.toLowerCase());
+          
+          if (existingCity) {
+            handleMarkerClick(existingCity);
+            setFlyTo({ center: [existingCity.lat, existingCity.lng], zoom: 10 });
+          } else {
+            const searchedCityData = {
+              city: result.city,
+              country: result.country || 'Unknown',
+              lat: result.latitude,
+              lng: result.longitude,
+              risk: 0.5, // Default risk for searched cities
+              risk_level: 'Unknown',
+              type: 'Searched Location'
+            };
+            setSearchedCity(searchedCityData);
+            handleMarkerClick(searchedCityData);
+            setFlyTo({ center: [result.latitude, result.longitude], zoom: 10 });
+          }
         } else {
-          alert(`City "${searchQuery}" not found. Please try a different city name.`);
+          alert(`City "${searchQuery}" not found in dataset.`);
         }
       }).catch(error => {
         console.error('Failed to search for city:', error);
-        alert(`City "${searchQuery}" not found. Please try a different city name.`);
+        alert(`City "${searchQuery}" not found in dataset.`);
       });
+  };
+
+  // Helper function to render Risk Trends dynamically based on selected year (Bug 8, Bug 5, Bug 3)
+  const renderTrendDetails = (hazard, currentVal, trendsData) => {
+    if (!trendsData) return null;
+    const currentPct = Math.round(currentVal * 100);
+    const val24 = Math.round(trendsData.value_2024 * 100);
+    const val35 = Math.round(trendsData.value_2035 * 100);
+    const val50 = Math.round(trendsData.value_2050 * 100);
+
+    let p1, p2, p3;
+    let w1, w2, w3;
+
+    if (selectedYear < 2035) {
+      p1 = { year: selectedYear, val: currentPct };
+      p2 = { year: 2035, val: val35 };
+      p3 = { year: 2050, val: val50 };
+      
+      w1 = Math.min(p1.val, 100);
+      w2 = Math.min(Math.max(0, p2.val - p1.val), 100);
+      w3 = Math.min(Math.max(0, p3.val - p2.val), 100);
+    } else if (selectedYear < 2050) {
+      p1 = { year: 2024, val: val24 };
+      p2 = { year: selectedYear, val: currentPct };
+      p3 = { year: 2050, val: val50 };
+      
+      w1 = Math.min(p1.val, 100);
+      w2 = Math.min(Math.max(0, p2.val - p1.val), 100);
+      w3 = Math.min(Math.max(0, p3.val - p2.val), 100);
+    } else {
+      p1 = { year: 2024, val: val24 };
+      p2 = { year: 2035, val: val35 };
+      p3 = { year: selectedYear, val: currentPct };
+      
+      w1 = Math.min(p1.val, 100);
+      w2 = Math.min(Math.max(0, p2.val - p1.val), 100);
+      w3 = Math.min(Math.max(0, p3.val - p2.val), 100);
+    }
+
+    return (
+      <div style={{ marginBottom: '15px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
+          <span style={{ fontWeight: '500', fontSize: '0.9rem', textTransform: 'capitalize' }}>{hazard}</span>
+          <span style={{ fontSize: '0.8rem', color: '#666' }}>{trendsData.trajectory}</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '0.85rem', marginBottom: '5px' }}>
+          <span style={{ minWidth: '40px' }}>{p1.year}: {p1.val}%</span>
+          <span style={{ minWidth: '40px' }}>{p2.year}: {p2.val}%</span>
+          <span style={{ minWidth: '40px' }}>{p3.year}: {p3.val}%</span>
+        </div>
+        <div style={{ background: '#e5e7eb', height: '6px', borderRadius: '3px', overflow: 'hidden', display: 'flex' }}>
+          <div style={{ background: '#3b82f6', height: '100%', width: `${w1}%` }}></div>
+          <div style={{ background: '#f59e0b', height: '100%', width: `${w2}%` }}></div>
+          <div style={{ background: '#ef4444', height: '100%', width: `${w3}%` }}></div>
+        </div>
+        {trendsData.years_to_critical !== null && (
+          <p style={{ margin: '5px 0 0 0', fontSize: '0.8rem', color: '#ef4444', fontWeight: '500' }}>
+            {trendsData.years_to_critical <= 0
+              ? "⚠️ Threshold already exceeded"
+              : `⚠️ Critical threshold in ~${trendsData.years_to_critical} years`}
+          </p>
+        )}
+      </div>
+    );
   };
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', fontFamily: 'Arial, sans-serif' }}>
+
       {/* Header */}
       <div style={{ padding: '10px 20px', background: '#1f2937', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
         <h1 style={{ margin: 0, fontSize: '1.5rem' }}>🌍 TerraWatch</h1>
-        <div style={{ fontSize: '0.9rem' }}>
-          {cities.length} cities monitored | Viewing: {debouncedYear} | SDG 13
+        <div style={{ fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <span>{cities.length} cities monitored | Viewing: {debouncedYear} | SDG 13</span>
+          <button 
+            onClick={() => setAboutModalOpen(true)} 
+            style={{ background: '#374151', color: 'white', border: '1px solid #4b5563', borderRadius: '4px', padding: '4px 8px', fontSize: '0.8rem', cursor: 'pointer' }}
+          >
+            About the Data
+          </button>
         </div>
       </div>
 
@@ -247,7 +349,7 @@ function App() {
             onChange={(e) => setSelectedYear(Number(e.target.value))}
             style={{ width: '150px' }}
           />
-          <button onClick={() => setSelectedYear(2024)} style={{ padding: '4px 8px', fontSize: '0.8rem', cursor: 'pointer' }}>Today</button>
+          <button onClick={() => setSelectedYear(new Date().getFullYear())} style={{ padding: '4px 8px', fontSize: '0.8rem', cursor: 'pointer' }}>Today</button>
           <button onClick={() => setSelectedYear(2030)} style={{ padding: '4px 8px', fontSize: '0.8rem', cursor: 'pointer' }}>2030</button>
           <button onClick={() => setSelectedYear(2050)} style={{ padding: '4px 8px', fontSize: '0.8rem', cursor: 'pointer' }}>2050</button>
         </div>
@@ -265,6 +367,7 @@ function App() {
             />
             {/* Display all cities with clustering */}
             <MarkerClusterGroup
+              key={`${debouncedYear}-${cities.length}`}
               cities={cities}
               onMarkerClick={handleMarkerClick}
               getColor={getColor}
@@ -281,6 +384,13 @@ function App() {
                 weight={3}
                 eventHandlers={{
                   click: () => handleMarkerClick(searchedCity),
+                  add: (e) => {
+                    const el = e.target.getElement();
+                    if (el) {
+                      el.setAttribute('aria-label', `${searchedCity.city} - Searched Location`);
+                      el.setAttribute('role', 'img');
+                    }
+                  }
                 }}
               >
                 <Tooltip>{searchedCity.city} (Searched)</Tooltip>
@@ -343,34 +453,42 @@ function App() {
                 <div style={{ border: '4px solid #f3f3f3', borderTop: '4px solid #3498db', borderRadius: '50%', width: '40px', height: '40px', animation: 'spin 2s linear infinite', margin: '0 auto 20px' }}></div>
                 <p>Loading risk analysis for {debouncedYear}...</p>
               </div>
+            ) : (!selectedCityRiskData && !insurance) ? (
+              <div style={{ textAlign: 'center', padding: '40px 20px', color: '#ef4444' }}>
+                <span style={{ fontSize: '2rem' }}>⚠️</span>
+                <h4 style={{ margin: '10px 0' }}>Data Unavailable</h4>
+                <p style={{ fontSize: '0.9rem', color: '#666' }}>
+                  Could not load climate risk data for {selectedCity?.city} in {debouncedYear}. Please check your connection or try again.
+                </p>
+              </div>
             ) : (
               <div>
                 <div style={{ marginBottom: '20px' }}>
                   <h4>Risk Assessment ({debouncedYear})</h4>
-                  {insurance ? (
+                  {selectedCityRiskData ? (
                     <>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
                         <span>Flood Risk:</span>
-                        <span>{Math.round((insurance.flood_multiplier - 1) * 100)}%</span>
+                        <span>{Math.round(selectedCityRiskData.flood_risk * 100)}%</span>
                       </div>
                       <div style={{ background: '#e5e7eb', height: '10px', borderRadius: '5px', marginBottom: '15px' }}>
-                        <div style={{ background: getColor((insurance.flood_multiplier - 1) / 2.5), height: '100%', borderRadius: '5px', width: `${Math.min((insurance.flood_multiplier - 1) * 100 / 2.5, 100)}%` }}></div>
+                        <div style={{ background: getColor(selectedCityRiskData.flood_risk), height: '100%', borderRadius: '5px', width: `${Math.min(selectedCityRiskData.flood_risk * 100, 100)}%` }}></div>
                       </div>
 
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
                         <span>Heat Risk:</span>
-                        <span>{Math.round((insurance.heat_multiplier - 1) * 100)}%</span>
+                        <span>{Math.round(selectedCityRiskData.heat_risk * 100)}%</span>
                       </div>
                       <div style={{ background: '#e5e7eb', height: '10px', borderRadius: '5px', marginBottom: '15px' }}>
-                        <div style={{ background: '#f59e0b', height: '100%', borderRadius: '5px', width: `${Math.min((insurance.heat_multiplier - 1) * 100 / 1.5, 100)}%` }}></div>
+                        <div style={{ background: '#f59e0b', height: '100%', borderRadius: '5px', width: `${Math.min(selectedCityRiskData.heat_risk * 100, 100)}%` }}></div>
                       </div>
 
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
                         <span>Storm Risk:</span>
-                        <span>{Math.round((insurance.storm_multiplier - 1) * 100)}%</span>
+                        <span>{Math.round(selectedCityRiskData.storm_risk * 100)}%</span>
                       </div>
                       <div style={{ background: '#e5e7eb', height: '10px', borderRadius: '5px', marginBottom: '15px' }}>
-                        <div style={{ background: '#8b5cf6', height: '100%', borderRadius: '5px', width: `${Math.min((insurance.storm_multiplier - 1) * 100 / 2.0, 100)}%` }}></div>
+                        <div style={{ background: '#8b5cf6', height: '100%', borderRadius: '5px', width: `${Math.min(selectedCityRiskData.storm_risk * 100, 100)}%` }}></div>
                       </div>
                     </>
                   ) : (
@@ -395,127 +513,10 @@ function App() {
                 {/* Risk Trends Section */}
                 {selectedCityRiskData?.trends && (
                   <div style={{ marginBottom: '25px', paddingBottom: '20px', borderBottom: '1px solid #eee' }}>
-                    <h4 style={{ margin: '0 0 15px 0', color: '#1f2937' }}>📊 Risk Trends (2024-2050)</h4>
-                    
-                    {/* Flood Trend */}
-                    <div style={{ marginBottom: '15px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
-                        <span style={{ fontWeight: '500', fontSize: '0.9rem' }}>Flood</span>
-                        <span style={{ fontSize: '0.8rem', color: '#666' }}>
-                          {selectedCityRiskData.trends.flood.trajectory}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '0.85rem', marginBottom: '5px' }}>
-                        <span style={{ minWidth: '40px' }}>2024: {Math.round(selectedCityRiskData.trends.flood.value_2024 * 100)}%</span>
-                        <span style={{ minWidth: '40px' }}>2035: {Math.round(selectedCityRiskData.trends.flood.value_2035 * 100)}%</span>
-                        <span style={{ minWidth: '40px' }}>2050: {Math.round(selectedCityRiskData.trends.flood.value_2050 * 100)}%</span>
-                      </div>
-                      <div style={{ background: '#e5e7eb', height: '6px', borderRadius: '3px', overflow: 'hidden', display: 'flex' }}>
-                        <div style={{
-                          background: '#3b82f6',
-                          height: '100%',
-                          width: `${Math.min(selectedCityRiskData.trends.flood.value_2024 * 100, 100)}%`,
-                          borderRadius: '3px'
-                        }}></div>
-                        <div style={{
-                          background: '#f59e0b',
-                          height: '100%',
-                          width: `${Math.min(selectedCityRiskData.trends.flood.value_2035 * 100, 100) - Math.min(selectedCityRiskData.trends.flood.value_2024 * 100, 100)}%`,
-                          borderRadius: '3px'
-                        }}></div>
-                        <div style={{
-                          background: '#ef4444',
-                          height: '100%',
-                          width: `${Math.min(selectedCityRiskData.trends.flood.value_2050 * 100, 100) - Math.min(selectedCityRiskData.trends.flood.value_2035 * 100, 100)}%`,
-                          borderRadius: '3px'
-                        }}></div>
-                      </div>
-                      {selectedCityRiskData.trends.flood.years_to_critical !== null && (
-                        <p style={{ margin: '5px 0 0 0', fontSize: '0.8rem', color: '#ef4444', fontWeight: '500' }}>
-                          ⚠️ Critical threshold in ~{selectedCityRiskData.trends.flood.years_to_critical} years
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Heat Trend */}
-                    <div style={{ marginBottom: '15px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
-                        <span style={{ fontWeight: '500', fontSize: '0.9rem' }}>Heat</span>
-                        <span style={{ fontSize: '0.8rem', color: '#666' }}>
-                          {selectedCityRiskData.trends.heat.trajectory}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '0.85rem', marginBottom: '5px' }}>
-                        <span style={{ minWidth: '40px' }}>2024: {Math.round(selectedCityRiskData.trends.heat.value_2024 * 100)}%</span>
-                        <span style={{ minWidth: '40px' }}>2035: {Math.round(selectedCityRiskData.trends.heat.value_2035 * 100)}%</span>
-                        <span style={{ minWidth: '40px' }}>2050: {Math.round(selectedCityRiskData.trends.heat.value_2050 * 100)}%</span>
-                      </div>
-                      <div style={{ background: '#e5e7eb', height: '6px', borderRadius: '3px', overflow: 'hidden', display: 'flex' }}>
-                        <div style={{
-                          background: '#3b82f6',
-                          height: '100%',
-                          width: `${Math.min(selectedCityRiskData.trends.heat.value_2024 * 100, 100)}%`,
-                          borderRadius: '3px'
-                        }}></div>
-                        <div style={{
-                          background: '#f59e0b',
-                          height: '100%',
-                          width: `${Math.min(selectedCityRiskData.trends.heat.value_2035 * 100, 100) - Math.min(selectedCityRiskData.trends.heat.value_2024 * 100, 100)}%`,
-                          borderRadius: '3px'
-                        }}></div>
-                        <div style={{
-                          background: '#ef4444',
-                          height: '100%',
-                          width: `${Math.min(selectedCityRiskData.trends.heat.value_2050 * 100, 100) - Math.min(selectedCityRiskData.trends.heat.value_2035 * 100, 100)}%`,
-                          borderRadius: '3px'
-                        }}></div>
-                      </div>
-                      {selectedCityRiskData.trends.heat.years_to_critical !== null && (
-                        <p style={{ margin: '5px 0 0 0', fontSize: '0.8rem', color: '#ef4444', fontWeight: '500' }}>
-                          ⚠️ Critical threshold in ~{selectedCityRiskData.trends.heat.years_to_critical} years
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Storm Trend */}
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
-                        <span style={{ fontWeight: '500', fontSize: '0.9rem' }}>Storm</span>
-                        <span style={{ fontSize: '0.8rem', color: '#666' }}>
-                          {selectedCityRiskData.trends.storm.trajectory}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', fontSize: '0.85rem', marginBottom: '5px' }}>
-                        <span style={{ minWidth: '40px' }}>2024: {Math.round(selectedCityRiskData.trends.storm.value_2024 * 100)}%</span>
-                        <span style={{ minWidth: '40px' }}>2035: {Math.round(selectedCityRiskData.trends.storm.value_2035 * 100)}%</span>
-                        <span style={{ minWidth: '40px' }}>2050: {Math.round(selectedCityRiskData.trends.storm.value_2050 * 100)}%</span>
-                      </div>
-                      <div style={{ background: '#e5e7eb', height: '6px', borderRadius: '3px', overflow: 'hidden', display: 'flex' }}>
-                        <div style={{
-                          background: '#3b82f6',
-                          height: '100%',
-                          width: `${Math.min(selectedCityRiskData.trends.storm.value_2024 * 100, 100)}%`,
-                          borderRadius: '3px'
-                        }}></div>
-                        <div style={{
-                          background: '#f59e0b',
-                          height: '100%',
-                          width: `${Math.min(selectedCityRiskData.trends.storm.value_2035 * 100, 100) - Math.min(selectedCityRiskData.trends.storm.value_2024 * 100, 100)}%`,
-                          borderRadius: '3px'
-                        }}></div>
-                        <div style={{
-                          background: '#ef4444',
-                          height: '100%',
-                          width: `${Math.min(selectedCityRiskData.trends.storm.value_2050 * 100, 100) - Math.min(selectedCityRiskData.trends.storm.value_2035 * 100, 100)}%`,
-                          borderRadius: '3px'
-                        }}></div>
-                      </div>
-                      {selectedCityRiskData.trends.storm.years_to_critical !== null && (
-                        <p style={{ margin: '5px 0 0 0', fontSize: '0.8rem', color: '#ef4444', fontWeight: '500' }}>
-                          ⚠️ Critical threshold in ~{selectedCityRiskData.trends.storm.years_to_critical} years
-                        </p>
-                      )}
-                    </div>
+                    <h4 style={{ margin: '0 0 15px 0', color: '#1f2937' }}>📊 Risk Trends ({debouncedYear}-2050)</h4>
+                    {renderTrendDetails("flood", selectedCityRiskData.flood_risk, selectedCityRiskData.trends.flood)}
+                    {renderTrendDetails("heat", selectedCityRiskData.heat_risk, selectedCityRiskData.trends.heat)}
+                    {renderTrendDetails("storm", selectedCityRiskData.storm_risk, selectedCityRiskData.trends.storm)}
                   </div>
                 )}
 
@@ -556,6 +557,50 @@ function App() {
           .controls { flex-direction: column; gap: 10px; }
         }
       `}</style>
+      {/* About the Data Modal (Bug 10) */}
+      {aboutModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 2000
+        }}>
+          <div style={{
+            background: 'white',
+            padding: '30px',
+            borderRadius: '8px',
+            maxWidth: '500px',
+            width: '90%',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
+            position: 'relative',
+            color: '#1f2937',
+            fontFamily: 'sans-serif'
+          }}>
+            <button 
+              onClick={() => setAboutModalOpen(false)} 
+              style={{ position: 'absolute', top: '15px', right: '15px', background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: '#6b7280' }}
+            >
+              ×
+            </button>
+            <h3 style={{ marginTop: 0, borderBottom: '1px solid #eee', paddingBottom: '10px', fontSize: '1.3rem' }}>🌍 About TerraWatch Climate Data</h3>
+            <div style={{ fontSize: '0.9rem', lineHeight: '1.6' }}>
+              <p><strong>Methodology:</strong> Climate projections are fetched dynamically for your exact coordinates using the <strong>Open-Meteo Climate Change API</strong> based on HighResMip working group models.</p>
+              <p><strong>Scenario:</strong> <strong>SSP2-4.5</strong> (Shared Socioeconomic Pathway 2-4.5), representing a medium-emission scenario with moderate mitigation.</p>
+              <p><strong>Timeline:</strong> 2024 (Baseline) to 2050 timeline, evaluating daily max temperature, precipitation sums, and max wind speeds to compute heatwave, flood, and storm risk trends.</p>
+              <p><strong>AI Integration:</strong> Explanations and local briefings are generated using Qwen-72B and Qwen-7B models via Featherless AI.</p>
+            </div>
+            <p style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '20px', borderTop: '1px solid #eee', paddingTop: '10px' }}>
+              Official climate projections powered by Open-Meteo and IPCC CMIP6 models. Last updated: March 2026.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

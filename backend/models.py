@@ -3,6 +3,7 @@ from typing import Optional, List
 
 class RiskResponse(BaseModel):
     city: str
+    country: Optional[str] = "Unknown"
     year: int
     latitude: float
     longitude: float
@@ -53,6 +54,7 @@ class HealthResponse(BaseModel):
 class CityRiskResponse(BaseModel):
     id: int
     city: str
+    country: Optional[str] = "Unknown"
     lat: float
     lng: float
     type: str

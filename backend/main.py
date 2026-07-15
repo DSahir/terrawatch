@@ -311,7 +311,13 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
-# CORS middleware
+# Caching Middleware
+app.add_middleware(CachingMiddleware, cache=hybrid_cache)
+
+# Correlation ID Middleware
+app.add_middleware(CorrelationIdMiddleware)
+
+# CORS middleware (added last so it runs outermost on requests and response headers)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -319,12 +325,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Caching Middleware (added before CorrelationIdMiddleware so correlation id runs first on requests)
-app.add_middleware(CachingMiddleware, cache=hybrid_cache)
-
-# Correlation ID Middleware
-app.add_middleware(CorrelationIdMiddleware)
 
 # Prometheus instrumentator setup
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")

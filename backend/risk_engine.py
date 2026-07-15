@@ -3,6 +3,7 @@ from math import radians, sin, cos, sqrt, atan2
 import logging
 from typing import Optional
 import os
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -33,16 +34,16 @@ except FileNotFoundError:
     logger.warning(f"Mock risk data not found at {CSV_PATH}. Using sample city data.")
     # Sample cities with risk data
     sample_data = [
-        {"city": "New York City", "lat": 40.7128, "lng": -74.0060, "flood_2024": 0.8, "heat_2024": 0.3, "storm_2024": 0.2},
-        {"city": "Los Angeles", "lat": 34.0522, "lng": -118.2437, "flood_2024": 0.2, "heat_2024": 0.9, "storm_2024": 0.1},
-        {"city": "London", "lat": 51.5074, "lng": -0.1278, "flood_2024": 0.5, "heat_2024": 0.4, "storm_2024": 0.3},
-        {"city": "Sydney", "lat": -33.8688, "lng": 151.2093, "flood_2024": 0.3, "heat_2024": 0.7, "storm_2024": 0.4},
-        {"city": "Mumbai", "lat": 19.0760, "lng": 72.8777, "flood_2024": 0.9, "heat_2024": 0.8, "storm_2024": 0.5},
-        {"city": "Lagos", "lat": 6.5244, "lng": 3.3792, "flood_2024": 0.6, "heat_2024": 0.9, "storm_2024": 0.3},
-        {"city": "Miami", "lat": 25.7617, "lng": -80.1918, "flood_2024": 0.7, "heat_2024": 0.6, "storm_2024": 0.8},
-        {"city": "Jakarta", "lat": -6.2088, "lng": 106.8456, "flood_2024": 0.8, "heat_2024": 0.7, "storm_2024": 0.4},
-        {"city": "Tokyo", "lat": 35.6762, "lng": 139.6503, "flood_2024": 0.4, "heat_2024": 0.5, "storm_2024": 0.6},
-        {"city": "São Paulo", "lat": -23.5505, "lng": -46.6333, "flood_2024": 0.5, "heat_2024": 0.6, "storm_2024": 0.2}
+        {"city": "New York City", "country": "United States", "lat": 40.7128, "lng": -74.0060, "flood_2024": 0.8, "heat_2024": 0.3, "storm_2024": 0.2},
+        {"city": "Los Angeles", "country": "United States", "lat": 34.0522, "lng": -118.2437, "flood_2024": 0.2, "heat_2024": 0.9, "storm_2024": 0.1},
+        {"city": "London", "country": "United Kingdom", "lat": 51.5074, "lng": -0.1278, "flood_2024": 0.5, "heat_2024": 0.4, "storm_2024": 0.3},
+        {"city": "Sydney", "country": "Australia", "lat": -33.8688, "lng": 151.2093, "flood_2024": 0.3, "heat_2024": 0.7, "storm_2024": 0.4},
+        {"city": "Mumbai", "country": "India", "lat": 19.0760, "lng": 72.8777, "flood_2024": 0.9, "heat_2024": 0.8, "storm_2024": 0.5},
+        {"city": "Lagos", "country": "Nigeria", "lat": 6.5244, "lng": 3.3792, "flood_2024": 0.6, "heat_2024": 0.9, "storm_2024": 0.3},
+        {"city": "Miami", "country": "United States", "lat": 25.7617, "lng": -80.1918, "flood_2024": 0.7, "heat_2024": 0.6, "storm_2024": 0.8},
+        {"city": "Jakarta", "country": "Indonesia", "lat": -6.2088, "lng": 106.8456, "flood_2024": 0.8, "heat_2024": 0.7, "storm_2024": 0.4},
+        {"city": "Tokyo", "country": "Japan", "lat": 35.6762, "lng": 139.6503, "flood_2024": 0.4, "heat_2024": 0.5, "storm_2024": 0.6},
+        {"city": "São Paulo", "country": "Brazil", "lat": -23.5505, "lng": -46.6333, "flood_2024": 0.5, "heat_2024": 0.6, "storm_2024": 0.2}
     ]
     data = sample_data
 
@@ -246,31 +247,113 @@ def estimate_damage(city: str, flood_risk: float, heat_risk: float, storm_risk: 
     return round(total_damage, 0)
 
 
+def calculate_real_risks_from_api(lat: float, lng: float, year: int) -> Optional[dict]:
+    """
+    Fetches real CMIP6 climate projections for a specific coordinate and year,
+    then calculates heat, flood, and storm risk metrics.
+    """
+    url = "https://climate-api.open-meteo.com/v1/climate"
+    
+    # We use MPI_ESM1_2_XR model as it supports all three target daily variables
+    params = {
+        "latitude": lat,
+        "longitude": lng,
+        "start_date": f"{year}-01-01",
+        "end_date": f"{year}-12-31",
+        "models": "MPI_ESM1_2_XR",
+        "daily": [
+            "temperature_2m_max",   # For heat risk
+            "precipitation_sum",    # For flood risk
+            "wind_speed_10m_max"    # For storm risk
+        ],
+        "timezone": "auto"
+    }
+
+    try:
+        with httpx.Client() as client:
+            resp = client.get(url, params=params, timeout=15.0)
+            if resp.status_code != 200:
+                logger.warning(f"Open-Meteo Climate API returned status {resp.status_code}")
+                return None
+            data = resp.json()
+            
+            daily_data = data.get("daily", {})
+            temps = daily_data.get("temperature_2m_max", [])
+            precip = daily_data.get("precipitation_sum", [])
+            wind = daily_data.get("wind_speed_10m_max", [])
+
+            # Filter out None values
+            temps = [t for t in temps if t is not None]
+            precip = [p for p in precip if p is not None]
+            wind = [w for w in wind if w is not None]
+
+            if not temps or not precip or not wind:
+                logger.warning("Empty weather list received from Climate API after filtering None values")
+                return None
+
+            # 1. Calculate Heat Risk (fraction of days > 35°C / 95°F)
+            extreme_heat_days = sum(1 for t in temps if t > 35.0)
+            # Normalizing by 30 days (1 month of extreme heat = 100% risk)
+            heat_risk = min(extreme_heat_days / 30.0, 1.0)
+
+            # 2. Calculate Flood Risk (based on heavy rain days > 50mm and max daily rain)
+            extreme_rain_days = sum(1 for p in precip if p > 50.0)
+            max_rain = max(precip)
+            flood_risk = min((extreme_rain_days * 0.2) + (max_rain / 150.0), 1.0)
+
+            # 3. Calculate Storm Risk (based on high wind days > 50 km/h and max wind speed)
+            extreme_wind_days = sum(1 for w in wind if w > 50.0)
+            max_wind = max(wind)
+            storm_risk = min((extreme_wind_days * 0.05) + (max_wind / 120.0), 1.0)
+
+            return {
+                "flood_risk": round(flood_risk, 3),
+                "heat_risk": round(heat_risk, 3),
+                "storm_risk": round(storm_risk, 3)
+            }
+    except Exception as e:
+        logger.error(f"Error calling Open-Meteo Climate API: {e}")
+        return None
+
+
 def get_risk_data(lat: float, lng: float, year: int) -> Optional[dict]:
     """
     T3: Main function to get complete risk data for a location and year
     Returns complete risk assessment with damage estimate
     """
     
-    point = nearest_point(lat, lng)
-    if point is None:
-        return None
+    # 1. Try fetching real climate data from Open-Meteo API
+    real_risks = calculate_real_risks_from_api(lat, lng, year)
     
-    # Interpolate risks for target year
-    risks = interpolate_risk(point, year)
-    if risks is None:
-        return None
-    
-    flood_risk = risks["flood_risk"]
-    heat_risk = risks["heat_risk"]
-    storm_risk = risks["storm_risk"]
+    if real_risks:
+        flood_risk = real_risks["flood_risk"]
+        heat_risk = real_risks["heat_risk"]
+        storm_risk = real_risks["storm_risk"]
+        city_name = "Query Location"
+        country_name = "Global Coordinates"
+    else:
+        # Fallback to local KD-Tree lookup and interpolation
+        point = nearest_point(lat, lng)
+        if point is None:
+            return None
+        
+        # Interpolate risks for target year
+        risks = interpolate_risk(point, year)
+        if risks is None:
+            return None
+        
+        flood_risk = risks["flood_risk"]
+        heat_risk = risks["heat_risk"]
+        storm_risk = risks["storm_risk"]
+        city_name = str(point.get("city", "Unknown"))
+        country_name = str(point.get("country", "Unknown"))
     
     # Calculate composite index
     cri = climate_risk_index(flood_risk, heat_risk, storm_risk)
     
     # Estimate damage
     damage = estimate_damage(
-        str(point.get("city", "Unknown")),
+        city_name,
         flood_risk,
         heat_risk,
         storm_risk,
@@ -278,9 +361,10 @@ def get_risk_data(lat: float, lng: float, year: int) -> Optional[dict]:
     )
     
     return {
-        "city": str(point.get("city", "Unknown")),
-        "latitude": float(point.get("lat", lat)),
-        "longitude": float(point.get("lng", lng)),
+        "city": city_name,
+        "country": country_name,
+        "latitude": lat,
+        "longitude": lng,
         "year": year,
         "flood_risk": flood_risk,
         "heat_risk": heat_risk,
@@ -308,6 +392,7 @@ def get_all_cities_risk(year: int) -> list:
             cities.append({
                 "id": idx + 1,
                 "city": risk_data["city"],
+                "country": risk_data["country"],
                 "lat": risk_data["latitude"],
                 "lng": risk_data["longitude"],
                 "type": "Climate Risk",  # Generic type since we have multiple risks

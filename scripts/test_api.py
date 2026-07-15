@@ -15,7 +15,7 @@ import httpx
 import json
 from pathlib import Path
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://localhost:8001"
 
 async def test_health_check():
     """Test health endpoint"""
@@ -108,7 +108,7 @@ async def test_narration():
         for test in test_cases:
             print(f"\n🌏 {test['city']} ({test['year']}) - Using Cache (live=false):")
             
-            response = await client.post(
+            response = await client.get(
                 f"{BASE_URL}/api/v1/narrate",
                 params={
                     "city": test["city"],

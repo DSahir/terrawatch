@@ -13,15 +13,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from backend.risk_engine import get_risk_data
-from backend.ai_client import FeatherlessAIClient
-from backend.insurance_engine import InsuranceEngine
+from backend.ai_client import generate_narration
+from backend.insurance_engine import get_insurance_estimate
 
 
 async def warmup_cache():
     """Pre-compute demo scenarios"""
     
-    ai_client = FeatherlessAIClient()
-    insurance_engine = InsuranceEngine()
     demo_cache = {}
     
     demo_scenarios = [
@@ -62,7 +60,7 @@ async def warmup_cache():
             
             # Generate narration
             try:
-                narration_data = await ai_client.generate_narration(
+                narration_data = await generate_narration(
                     city=city,
                     latitude=lat,
                     longitude=lng,
@@ -77,7 +75,7 @@ async def warmup_cache():
                 demo_cache[cache_key] = narration_data
                 
                 # Generate insurance estimate
-                insurance_data = await insurance_engine.get_insurance_estimate(
+                insurance_data = await get_insurance_estimate(
                     city=city,
                     flood_risk=risk_data["flood_risk"],
                     heat_risk=risk_data["heat_risk"],
